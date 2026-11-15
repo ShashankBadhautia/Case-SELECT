@@ -1,162 +1,161 @@
 # Case-SELECT
 
-A detective game where you investigate crime scenes and solve cases by writing
-SQL. Explore an environment, gather clues, interrogate the case database, and
-name the culprit.
+A 2D pixel-art detective game. You walk through a crime scene, question
+witnesses, and crack the case by writing SQL against the case records.
 
-The project has two halves that run as separate servers:
-
-- **Backend** — Express + Prisma, serves a SQL IDE and the game's REST API.
-- **Frontend** — React + Vite, serves the pixel-art detective dashboard and the
-  investigation game screen.
-
----
-
-## Overview
+The design doc's game loop: enter a location, explore it, talk to people, find
+clues, then answer the open question with a query. A right answer adds
+evidence and unlocks the next place to go.
 
 | Piece | Stack | Port |
 | --- | --- | --- |
-| Backend API + SQL IDE | Express 5, Prisma 7, PostgreSQL | `3000` |
-| Frontend dashboard + game screen | React 19, Vite 8, react-router-dom 7 | `5173` |
+| Backend API and developer SQL IDE | Express 5, Prisma 7, PostgreSQL | `3000` |
+| Game | React 19, Phaser 4, Vite 8 | `5173` |
 
-## Features
+## Quick start
 
-- **Detective dashboard** — case statistics and a case grid showing each case's
-  status (`LOCKED`, `NOT STARTED`, `IN PROGRESS`, `COMPLETED`).
-- **Investigation game screen** — scene frame, case briefing, evidence log, an
-  inline SQL console, culprit submission and an in-game terminal.
-- **In-game SQL terminal** — opens the existing SQL IDE inside the game screen.
-- **SQL IDE** — a standalone database workbench: syntax-highlighted editor,
-  terminal for `\commands`, schema explorer and a results table.
-- **Light / dark theme** — one token set drives both, on every screen.
-- **Responsive layout** — desktop-first, usable down to laptop and tablet widths.
+Requires Node.js 22.18+ (Prisma 7's generated client is TypeScript that Node
+loads natively) and a PostgreSQL database.
 
-## Architecture
+```bash
+npm install
+cp .env.example .env            # set DATABASE_URL
+npm run db:generate
+npx prisma migrate deploy       # create the tables
+node prisma/seed.js             # case C001 + the "detective" player
+npm run dev                     # backend on :3000
 
-The backend follows the existing MVC layout and is unchanged apart from two
-read-only endpoints added for the dashboard.
-
-```
-src/
-  app.js            Express app: middleware, routers, static views
-  config/           Environment-driven configuration
-  models/           Database provider interface, providers, factory
-  services/         Connection, schema and query services
-  controllers/      HTTP handlers (one per resource)
-  routes/           Express routers mounted in app.js
-  middleware/       404 + error handling
-  views/            SQL IDE page (server-rendered HTML)
-public/             SQL IDE stylesheet and script
-prisma/             Schema, migrations, seed, dev data script
-frontend/           React app (dashboard, game screen, pixel components)
+cd frontend
+npm install
+cp .env.example .env
+npm run dev                     # game on :5173
 ```
 
-Data flows one way: **frontend → fetch → router → controller → Prisma →
-PostgreSQL**. Controllers never touch Prisma directly and the frontend never
-touches the database.
+Open <http://localhost:5173>, pick the case file and play.
 
-## Frontend Structure
+Controls: WASD or arrow keys to walk, E or Space to talk, inspect or use a
+terminal, C for the case file, Esc for the menu. In a terminal, Ctrl/⌘ + Enter
+runs the query.
 
-```
-frontend/src/
-  api/client.js            fetch wrapper; one function per backend route
-  components/pixel/        Reusable pixel-art components
-  context/                 ThemeContext + ThemeProvider
-  data/caseMeta.js         Display metadata + status derivation (dummy data)
-  pages/                   Dashboard, GameScreen, PlaceholderPage
-  styles/tokens.css        Design tokens: the light/dark palettes
-  styles/pixel.css         Component styles, built on those tokens
-  game/Game.jsx            Existing Phaser scene (untouched)
-  App.jsx                  Routes
-```
+## How a case works
 
-Reusable components: `PixelButton`, `PixelPanel`, `PixelCard`, `PixelBadge`,
-`CaseCard`, `ProgressBar`, `StatCard`, `Sidebar`, `ThemeToggle`, `Modal`,
-`Terminal`, `ResultTable`, `CulpritSubmit`, plus `LoadingState`, `ErrorState`
-and `EmptyState`.
+A case is a numbered list of steps. Each step happens at a location and is
+either a **dialogue** (talk to an NPC) or a **query** (answer a question at that
+location's records terminal). The server owns progression:
 
-Routes:
+- The player can enter the case's start location plus the location of every
+  step they have reached. Doors to anywhere else stay locked.
+- Finishing a dialogue or answering a query moves the player to the next step.
+- Answers are graded on the server. A query stores `answerValues` (values that
+  must appear together in one result row) and `maxRows` (so `SELECT *` on a
+  whole table does not count). Players can write the query however they like.
+- Answering a query reveals its evidence and unlock message. Finishing the last
+  step closes the case.
 
-| Route | Screen |
-| --- | --- |
-| `/` | Dashboard (also `/cases`) |
-| `/game/:caseId` | Investigation screen for one case |
-| `/evidence`, `/notes`, `/profile` | Placeholders naming the endpoint each needs |
-| SQL IDE | Served by the backend at `http://localhost:3000/` |
+Case C001, "The Murderer Is Not a Suspect", is the doc's "Case Select 000":
+20 steps, 8 queries, 8 pieces of evidence. Its content lives in
+[`prisma/data/caseC001.js`](prisma/data/caseC001.js), including notes on what
+was added to the doc so it plays end to end.
 
-## Backend Integration
+## Player SQL safety
 
-The frontend is database-agnostic: it only knows these HTTP routes. Case
-metadata, suspects, evidence and locations are never hardcoded — the one
-exception is clearly-marked placeholder copy in `frontend/src/data/caseMeta.js`.
+Queries typed in the game go through
+[`src/services/playerSql.service.js`](src/services/playerSql.service.js): one
+`SELECT` or `WITH` statement, no `pg_*` or `information_schema`, every table
+read (checked with `EXPLAIN`) must be one of the case's investigation tables,
+and it runs in a read-only transaction with a 3 second timeout. The `users`
+table is therefore out of reach from the game.
 
-### Endpoints used by the frontend
+## API
 
-| Method | Route | Used for |
+| Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/cases` | Case grid (id, name, step count) |
-| `GET` | `/api/cases/:id` | Game screen briefing |
-| `GET` | `/api/cases/:id/steps` | Evidence log, locations, active query |
-| `GET` | `/api/users/:id/progress` | Per-case status on the dashboard |
-| `POST` | `/api/queries/:id/execute` | Inline SQL console (read-only SELECT) |
-| `GET` | `/api/ide/status` | SQL IDE connection state |
+| `GET` | `/api/cases` | Case list with description, difficulty and step count |
+| `GET` | `/api/cases/:id` | One case |
+| `GET` | `/api/cases/:id/steps` | Full step list (answers left out) |
+| `POST` | `/api/cases/:id/sql` | Run SQL against the case records, ungraded |
+| `GET` | `/api/users/by-username/:username` | Look up a player |
+| `GET` | `/api/users/:id/progress` | A player's status in each case |
+| `GET` | `/api/users/:userId/cases/:caseId/session` | Case, locations, NPCs, tables and the player's progress |
+| `POST` | `/api/users/:userId/cases/:caseId/session/dialogue` | `{ sequenceId }`: finish the current dialogue step |
+| `POST` | `/api/users/:userId/cases/:caseId/session/answer` | `{ sequenceId, sql }`: answer the current query step |
+| `PUT` | `/api/users/:userId/cases/:caseId/session/location` | `{ locationId }`: move to an unlocked location |
+| `DELETE` | `/api/users/:userId/cases/:caseId/session` | Restart the case |
+| `GET` | `/api/dialogues/:id`, `/api/locations/:id`, `/api/locations/:id/npcs` | Lookups |
+| `POST` | `/api/queries/:id/execute` | Older ungraded runner, kept for compatibility |
 
-`GET /api/cases` and `GET /api/users/:id/progress` were added for the dashboard
-because no existing route supplied that data. Both are plain read-only
-passthroughs over existing models — no game rules, no schema changes. See
-[SUGGESTED_IMPROVEMENTS.md](SUGGESTED_IMPROVEMENTS.md) §12.
+Session actions name the step they complete. If it is not the player's current
+step the server answers `409` with the real progress, so a double click never
+skips a step.
 
-### Endpoints that do not exist yet
+## Project structure
 
-The game screen renders UI for these but cannot function without them, so each
-is documented rather than faked:
+```
+prisma/
+  schema.prisma, migrations/
+  data/caseC001.js          case content (story, steps, queries, investigation data)
+  seed.js                   loads every case file, creates the demo player
+src/                        backend (Express, MVC)
+  db/prisma.js              shared Prisma client and pg pool
+  services/
+    caseProgression.js      pure game rules (unit tested)
+    caseSession.service.js  loads a playthrough, applies player actions
+    grading.js              decides if a result answers a question
+    playerSql.service.js    guarded runner for player SQL
+  controllers/ routes/ middleware/ utils/ views/ (SQL IDE)
+frontend/src/
+  pages/                    TitleScreen, GamePage
+  game/                     Phaser: scenes, world layouts, tiles, characters
+  ui/                       React overlays: dialogue, terminal, case file, HUD
+  hooks/ api/ styles/
+test/                       backend unit tests (node --test)
+```
 
-- Culprit submission and validation
-- Suspects list
-- Movement / map / scene state
-- Hints
-- Player XP, level and stats
-- Evidence archive and notes
+See [`frontend/README.md`](frontend/README.md) for how the game is put
+together and how to add locations, NPCs and cases.
 
-## Game Flow
+## Environment variables
 
-1. **Dashboard** (`/`) — review your stats and pick a case file.
-2. **Open a case** — click a case card to enter `/game/:caseId`.
-3. **Briefing** — read the case description and see the evidence log.
-4. **Investigate** — write `SELECT` queries in the inline console, or open the
-   full **SQL Terminal** for the complete IDE.
-5. **Accuse** — name the suspect you believe is responsible.
+Backend (`.env`):
 
-Progression, query grading and culprit validation are backend responsibilities.
-The UI reports what the API returns and does not decide outcomes itself.
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DATABASE_URL` | none | PostgreSQL connection string |
+| `PORT` | `3000` | Backend port |
+| `CORS_ORIGIN` | `http://localhost:5173` | Origin allowed to call the API |
+| `DB_MODE` | `prisma` | SQL IDE database mode (PostgreSQL only) |
 
-## Dashboard
+Frontend (`frontend/.env`):
 
-- **Sidebar** — Dashboard, Cases, Evidence, Notes, Profile, SQL IDE, theme toggle.
-- **Player header** — the current demo player and a refresh action.
-- **Statistics** — completed / in progress / not started / locked / total, all
-  derived from the API.
-- **Case grid** — case id, title, description, difficulty, status, step progress
-  and a start/continue/review action. Locked cases are disabled.
-- **Achievements** — earned from status data the backend already returns.
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | `http://localhost:3000` | Backend origin |
+| `VITE_PLAYER_USERNAME` | `detective` | Player whose progress is saved (there is no login yet) |
+| `VITE_PORT` | `5173` | Dev server port |
 
-## Game Screen
+## Scripts
 
-Laid out to match the game-screen reference:
+| Script | Description |
+| --- | --- |
+| `npm run dev` | Backend with file watching |
+| `npm start` | Backend |
+| `npm test` | Backend tests |
+| `npm run db:generate` | Regenerate the Prisma client |
+| `node prisma/seed.js` | Reset case content and all progress (users are kept) |
+| `cd frontend && npm run dev` | Game dev server |
+| `cd frontend && npm run build` | Production build to `frontend/dist` |
+| `cd frontend && npm run lint` | ESLint |
 
-- **Scene** — investigation area. Shows a static summary of the case's
-  locations; the existing Phaser scene can be loaded on demand.
-- **Scene controls** — Move, Map, Hint and Menu. Move/Map/Hint render disabled
-  because they need game state that does not exist yet.
-- **Evidence log** — evidence attached to the case's steps.
-- **Case briefing** — description and progress.
-- **SQL terminal** — inline console with Run and Full IDE, or open the full IDE.
-- **Accuse a suspect** — select, confirm, submit, with loading and feedback states.
+## Art
 
-## SQL IDE
+Tiles and characters are Kenney.nl packs released under CC0. See
+[`frontend/public/assets/CREDITS.md`](frontend/public/assets/CREDITS.md).
 
-Available standalone at `http://localhost:3000/` and in-game via **SQL
-Terminal**. Provides:
+## Developer SQL IDE
+
+A standalone database workbench for developers, served by the backend at
+`http://localhost:3000/`. It is separate from the game's records terminal and
+has full access to the database. Provides:
 
 - A syntax-highlighted editor (`Ctrl`/`⌘` + `Enter` to run)
 - A terminal for `\commands`
@@ -166,8 +165,7 @@ Terminal**. Provides:
 
 The IDE reaches the database only through a provider interface
 (`src/models/databaseProvider.js`), so changing databases is configuration, not
-code. The game screen embeds this page in an iframe rather than duplicating any
-of it.
+code.
 
 ### Multiple statements
 
@@ -225,262 +223,15 @@ SELECT "caseName" FROM cases WHERE id = 'C001';
 
 See [`database.md`](database.md) for full connection and provider details.
 
-## Theme System
-
-`frontend/src/styles/tokens.css` defines one token set; light and dark differ
-only in colour values. `ThemeProvider` sets `data-theme` on `<html>`, so every
-screen — dashboard, game screen, modal, terminal — reads the same variables and
-stays visually consistent. The choice persists in `localStorage` and falls back
-to `prefers-color-scheme`.
-
-| | Light | Dark |
-| --- | --- | --- |
-| Background | `#FFFDF5` warm ivory | `#0D0D0D` near-black |
-| Secondary | `#FFF7D6` cream | `#17130F` charcoal |
-| Primary | `#FFE58A` | `#24180D` |
-| Accent | `#FFD23F` / `#E6A800` gold | `#FF8A00` / `#FFB52E` amber |
-| Text | `#3A2A12` deep brown | `#FFF1D0` warm white |
-
-Status colours (success green, warning yellow, danger red, info cyan, evidence
-teal, special purple) are accents only, never the base palette.
-
-## Dummy Data
-
-Two separate sources, deliberately kept apart from game logic:
-
-| Source | Contains | Owner |
-| --- | --- | --- |
-| `prisma/seed.js` | Case C001 and its full investigation dataset | Content team |
-| `prisma/dummy-frontend-cases.sql` | Demo player + 4 placeholder cases | Frontend dev only |
-
-The dummy script exists so every dashboard state can be reviewed. It contains
-**no** suspects, evidence, locations or clues, and it is idempotent.
-
-```bash
-psql "$DATABASE_URL" -f prisma/dummy-frontend-cases.sql
-```
-
-It produces:
-
-| Case | Name | Dashboard status |
-| --- | --- | --- |
-| C001 | The Murderer Is Not a Suspect | `COMPLETED` |
-| C002 | The Missing Analyst | `IN PROGRESS` |
-| C003 | The Downtown Heist | `NOT STARTED` |
-| C004 | The Silent Witness | `NOT STARTED` |
-| C005 | The Poisoned Deal | `LOCKED` |
-
-`COMPLETED` and `IN PROGRESS` come from the database. `NOT STARTED` is derived
-from a missing progress row. **`LOCKED` is display-only** — a placeholder flag
-in `frontend/src/data/caseMeta.js`, because lock rules are progression logic the
-frontend must not own. See SUGGESTED_IMPROVEMENTS.md §3.
-
-## Environment Variables
-
-**Backend** — copy `.env.example` to `.env`:
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | yes | — | PostgreSQL connection string |
-| `DB_MODE` | no | `prisma` | `prisma` (PostgreSQL) — the only mode |
-| `PORT` | no | `3000` | Backend port |
-
-`DB_MODE` accepts case-insensitive aliases (`postgres`/`postgresql`/`pg`/`real`).
-An unrecognised value is rejected at startup rather than silently falling back.
-Run `\status` in the IDE terminal to confirm the active database.
-
-**Frontend** — copy `frontend/.env.example` to `frontend/.env`:
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `VITE_API_BASE_URL` | no | `http://localhost:3000` | Backend origin |
-| `VITE_DEMO_USER_ID` | no | `2` | Player whose progress the dashboard reads |
-| `VITE_PORT` | no | `5173` | Dev server port |
-
-> `VITE_DEMO_USER_ID` exists only because the app has no authentication yet.
-> See SUGGESTED_IMPROVEMENTS.md §10.
-
-## Installation
-
-### Prerequisites
-
-- **Node.js 22.18+** — Prisma 7 generates a TypeScript client that Node loads
-  natively, so type-stripping support is required.
-- **npm** (bundled with Node).
-- **PostgreSQL** — local or hosted (Neon, Supabase, RDS…).
-
-No native build toolchain is needed: `npm install` requires neither Visual
-Studio C++ build tools nor Python/node-gyp.
-
-### Steps
-
-```bash
-# 1. Backend dependencies
-npm install
-
-# 2. Configure the database
-cp .env.example .env
-#    edit DATABASE_URL
-
-# 3. Generate the Prisma client
-npm run db:generate
-
-# 4. Create the tables
-npx prisma db push --schema prisma/schema.prisma   # dev
-# npx prisma migrate deploy --schema prisma/schema.prisma   # real environments
-
-# 5. Load content (optional but recommended)
-node prisma/seed.js
-
-# 6. Load frontend dev data (optional)
-psql "$DATABASE_URL" -f prisma/dummy-frontend-cases.sql
-
-# 7. Frontend dependencies
-cd frontend && npm install && cd ..
-```
-
-## Running Locally
-
-Two terminals:
-
-```bash
-# Terminal 1 — backend on :3000
-npm run dev
-```
-
-```bash
-# Terminal 2 — frontend on :5173
-cd frontend && npm run dev
-```
-
-Then open:
-
-| URL | What |
-| --- | --- |
-| <http://localhost:5173> | Dashboard + game screen |
-| <http://localhost:3000> | Standalone SQL IDE |
-
-The frontend calls the backend cross-origin, so `src/app.js` allows
-`http://localhost:5173` via CORS. If you change the frontend port, update the
-CORS origin there too.
-
-## Development
-
-| Script | Description |
-| --- | --- |
-| `npm run dev` | Backend with file watching |
-| `npm start` | Backend, no watching |
-| `npm test` | Backend test suite (23 tests) |
-| `npm run db:generate` | Regenerate the Prisma client |
-
-| Script (in `frontend/`) | Description |
-| --- | --- |
-| `npm run dev` | Frontend dev server |
-| `npm run build` | Production build to `frontend/dist` |
-| `npm run preview` | Serve the production build locally |
-| `npm run lint` | ESLint |
-
-### Production build
-
-```bash
-cd frontend
-npm run build      # outputs to frontend/dist
-npm run preview    # verify the build locally
-```
-
-The dashboard bundle is ~285 kB; the Phaser scene is code-split into its own
-chunk and only fetched when a player opens the interactive scene.
-
-## API Expectations
-
-The frontend depends on these response shapes. If the backend team changes
-them, `frontend/src/api/client.js` is the only file that needs updating.
-
-```jsonc
-// GET /api/cases
-[{ "id": "C001", "caseName": "…", "stepCount": 16 }]
-
-// GET /api/cases/:id
-{ "id": "C001", "caseName": "…" }
-
-// GET /api/cases/:id/steps
-// dialogue/evidence/location/query are null when the step has none
-[{ "id": "S001", "caseId": "C001", "sequenceId": 1,
-   "dialogueId": "D001", "evidenceId": null, "locationId": "L001", "queryId": null,
-   "dialogue": { "id": "D001", "caseId": "C001", "npcId": "N001", "locationId": "L001",
-                 "dialoguesList": ["…"],
-                 "npc": { "id": "N001", "npcName": "NPC1" } },
-   "evidence": null,
-   "location": { "id": "L001", "locationName": "The Red Lantern Diner" },
-   "query": null }]
-
-// GET /api/users/:id/progress
-// sequenceId/locationId/locationName are null unless the player is mid-step
-[{ "id": 5, "userId": 2, "caseId": "C001", "status": "COMPLETED",
-   "sequenceId": null, "locationId": null, "locationName": null }]
-
-// POST /api/queries/:id/execute
-{ "queryId": "Q001", "success": true, "result": [{ "column": "value" }] }
-```
-
-Note that the execute endpoint returns rows only — it has no correctness
-verdict. See SUGGESTED_IMPROVEMENTS.md §11.
-
-## Project Structure
-
-```
-.
-├── prisma/
-│   ├── schema.prisma              # Prisma schema (PostgreSQL)
-│   ├── migrations/                # Applied migrations
-│   ├── seed.js                    # Case C001 + investigation content
-│   └── dummy-frontend-cases.sql   # Frontend dev data (idempotent)
-├── src/                           # Backend (Express, MVC)
-│   ├── app.js  server.js  config/  models/  services/
-│   ├── controllers/  routes/  middleware/  utils/  views/
-├── public/                        # SQL IDE styles + script
-├── frontend/
-│   ├── src/
-│   │   ├── api/  components/pixel/  context/  data/
-│   │   ├── pages/  styles/  game/
-│   │   ├── App.jsx  main.jsx  index.css
-│   │   └── .env.example
-│   └── package.json  vite.config.js
-├── test/                          # Backend tests
-├── database.md                    # Database connection guide
-└── SUGGESTED_IMPROVEMENTS.md      # Backend work the frontend cannot own
-```
-
 ## Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
-| `EADDRINUSE` on :3000 | `pkill -f "node src/server.js"` |
-| Frontend on :5174 instead of :5173 | :5173 was busy; set `VITE_PORT` or free the port |
-| "Could not resolve react-router-dom" | `cd frontend && npm install` — it must be in `package-lock.json` |
-| `DATABASE OFFLINE` on the dashboard | Backend not running, or `VITE_API_BASE_URL` is wrong |
-| CORS error in the console | Frontend origin must match the CORS origin in `src/app.js` |
+| "Can't reach the case server" | Start the backend, or fix `VITE_API_BASE_URL` |
+| `Player "detective" not found` | Run `node prisma/seed.js` |
+| CORS error in the console | Set `CORS_ORIGIN` to the game's origin |
 | Prisma client errors | `npm run db:generate` |
-| Tables missing | `npx prisma db push --schema prisma/schema.prisma` |
-| Empty case grid | Load data: `node prisma/seed.js` then the dummy script |
-| IDE says "Not connected" | Press **Connect** in the IDE, or run `\connect` |
-| Accusation returns "no endpoint yet" | Expected — see SUGGESTED_IMPROVEMENTS.md §4 |
-| Google Fonts blocked offline | Fonts fall back to monospace; layout is unaffected |
-| Phaser scene blank | It only loads on demand; click "Load interactive scene" |
+| Tables missing | `npx prisma migrate deploy` |
+| Frontend refuses to start on :5173 | Port busy: free it or set `VITE_PORT` and `CORS_ORIGIN` |
 
-## Team Responsibility Boundaries
-
-| Area | Responsible |
-| --- | --- |
-| Backend API, SQL engine, provider abstraction | Backend team |
-| Database schema and migrations | Backend team |
-| Game logic, progression, scoring, query grading | Game logic team |
-| Culprit validation and case solutions | Game logic team |
-| Authentication and authorisation | Backend team |
-| Case content, story and dialogue | Content team |
-| Dashboard, game screen, components, theming, API calls | Frontend team |
-
-The frontend task added only two read-only endpoints (`GET /api/cases`,
-`GET /api/users/:id/progress`) because no existing route supplied the data the
-dashboard needs. Everything else requiring game or backend logic is recorded in
-[SUGGESTED_IMPROVEMENTS.md](SUGGESTED_IMPROVEMENTS.md) rather than implemented.
+Open work is listed in [SUGGESTED_IMPROVEMENTS.md](SUGGESTED_IMPROVEMENTS.md).

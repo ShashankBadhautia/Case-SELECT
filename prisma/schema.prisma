@@ -51,8 +51,13 @@ model UserProgress {
 // ───────────── Cases, NPCs, dialogue, locations ─────────────
 
 model Case {
-  id       String @id
-  caseName String
+  id              String  @id
+  caseName        String
+  description     String?
+  difficulty      String? // Easy | Medium | Hard
+  startLocationId String? // where the detective arrives; unlocked from the start
+
+  startLocation Location? @relation("CaseStart", fields: [startLocationId], references: [id])
 
   dialogues    Dialogue[] // "npc says"
   evidences    Evidence[]
@@ -65,8 +70,9 @@ model Case {
 }
 
 model Npc {
-  id      String @id
+  id      String  @id
   npcName String
+  role    String? // shown under the name, e.g. "Diner Manager"
 
   dialogues Dialogue[] // "said in" (NPC <-> Case via Dialogue)
 
@@ -74,9 +80,11 @@ model Npc {
 }
 
 model Location {
-  id           String @id
+  id           String  @id
   locationName String
+  description  String?
 
+  startOfCases Case[]       @relation("CaseStart")
   dialogues    Dialogue[]
   steps        CaseProgress[]
   userProgress UserProgress[]
@@ -128,9 +136,10 @@ model CaseProgress {
 // ───────────── Evidence, queries, investigation tables ─────────────
 
 model Evidence {
-  id           String @id
+  id           String  @id
   caseId       String
   evidenceName String
+  description  String?
 
   case    Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
   queries Query[] // "in" (evidences found in query output)
@@ -141,9 +150,20 @@ model Evidence {
 }
 
 model Query {
-  id          String @id
-  caseId      String
-  queryOutput String // expected output of the query
+  id            String   @id
+  caseId        String
+  queryOutput   String // the answer as the player would say it, e.g. "Yes" or "₹50,000"
+  title         String?
+  question      String?
+  difficulty    String?
+  hint          String?
+  unlockMessage String? // shown once the player answers correctly
+
+  // Grading: a result is correct when one row contains every answerValue
+  // (case-insensitive) and the result has at most maxRows rows. maxRows stops
+  // a bare "SELECT * FROM table" from passing because the answer is in there.
+  answerValues  String[]
+  maxRows       Int?
 
   case      Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
   evidences Evidence[]
@@ -155,8 +175,10 @@ model Query {
 
 // Data tables (logs, transactions, accounts...) used in cases
 model InvestigationTable {
-  id        String @id
-  tableName String
+  id          String  @id
+  tableName   String
+  displayName String?
+  description String?
 
   queryTables QueryTable[]
 

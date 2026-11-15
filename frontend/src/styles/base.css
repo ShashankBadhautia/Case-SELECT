@@ -1,0 +1,313 @@
+/* Resets, layout primitives and shared pixel components. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 22px;
+  line-height: 1.25;
+  -webkit-font-smoothing: none;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-pixel);
+  font-weight: normal;
+  line-height: 1.4;
+  margin: 0 0 12px;
+}
+
+h2 {
+  font-size: 16px;
+}
+
+h3 {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 18px;
+}
+
+p {
+  margin: 0 0 10px;
+}
+
+code {
+  font-family: var(--font-code);
+  font-size: 0.75em;
+  color: var(--accent);
+}
+
+kbd {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  padding: 3px 5px;
+  margin: 0 4px;
+  color: var(--bg);
+  background: var(--text-muted);
+  box-shadow: 0 2px 0 var(--text-dim);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.muted {
+  color: var(--text-dim);
+}
+
+.eyebrow {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+/* ── Screens ── */
+
+.screen {
+  min-height: 100%;
+  padding: 32px 16px;
+}
+
+.screen--center {
+  display: grid;
+  place-items: center;
+}
+
+.loading {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  color: var(--text-muted);
+  animation: blink 1.2s steps(2) infinite;
+}
+
+.message {
+  max-width: 520px;
+  text-align: center;
+}
+
+.message--error {
+  color: var(--bad);
+}
+
+/* ── Panels: chunky pixel frames drawn with stacked shadows ── */
+
+.panel {
+  background: var(--panel);
+  padding: 20px;
+  box-shadow:
+    0 0 0 var(--px) var(--panel-edge),
+    0 0 0 calc(var(--px) * 2) var(--bg),
+    inset 0 var(--px) 0 var(--panel-highlight);
+}
+
+.panel--thin {
+  padding: 8px 12px;
+}
+
+/* ── Buttons ── */
+
+.btn {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--panel-highlight);
+  border: 0;
+  padding: 10px 14px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow:
+    0 0 0 var(--px) var(--bg),
+    inset 0 calc(var(--px) * -1) 0 rgb(0 0 0 / 35%);
+}
+
+.btn:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--px) var(--bg);
+}
+
+.btn:focus-visible {
+  outline: var(--px) solid var(--accent);
+  outline-offset: 3px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  color: var(--bg);
+  background: var(--accent);
+}
+
+.btn--danger {
+  background: var(--lantern);
+}
+
+.btn--ghost {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+.btn--small {
+  font-size: 8px;
+  padding: 7px 9px;
+}
+
+/* ── Badges, chips, meters ── */
+
+.badge {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  padding: 4px 6px;
+  background: var(--panel-highlight);
+  color: var(--text);
+}
+
+.badge--easy {
+  background: #2f6b33;
+}
+
+.badge--medium {
+  background: #8a5a00;
+}
+
+.badge--hard {
+  background: #8a2420;
+}
+
+.chips {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  font-size: 18px;
+  padding: 2px 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 2px var(--panel-edge);
+}
+
+.meter {
+  flex: 1;
+  height: 12px;
+  background: var(--bg);
+  box-shadow: 0 0 0 2px var(--panel-edge);
+}
+
+.meter__fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s steps(8);
+}
+
+/* ── Evidence ── */
+
+.evidence-card {
+  background: var(--bg-raised);
+  padding: 10px 12px;
+  border-left: var(--px) solid var(--accent);
+}
+
+.evidence-card strong {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.evidence-card p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.evidence-card__label {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  color: var(--good);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.evidence-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.evidence-list--compact {
+  text-align: left;
+  font-size: 19px;
+}
+
+.evidence-list--compact strong {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: var(--accent);
+}
+
+/* ── Character portraits (CSS sprite layers) ── */
+
+.portrait {
+  position: relative;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+.portrait__layer {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
