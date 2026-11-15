@@ -1,80 +1,22 @@
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
-import { config } from "../config/index.js";
-
-let prisma = null;
-
-async function getPrisma() {
-  if (prisma) return prisma;
-
-  const { PrismaClient } = await import("../../generated/prisma/client.ts");
-
-  const pool = new Pool({
-    connectionString: config.databaseUrl,
-  });
-
-  const adapter = new PrismaPg(pool);
-
-  prisma = new PrismaClient({ adapter });
-
-  return prisma;
-}
+import { getPrisma } from "../db/prisma.js";
+import { HttpError } from "../utils/httpError.js";
 
 export const getLocation = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const prisma = await getPrisma();
+  const location = await prisma.location.findUnique({ where: { id: req.params.id } });
+  if (!location) throw new HttpError(404, "Location not found");
 
-    const client = await getPrisma();
-
-    const location = await client.location.findUnique({
-      where: {
-        id: id,
-      },
-    });
-
-    if (!location) {
-      return res.status(404).json({
-        message: "Location not found",
-      });
-    }
-
-    res.status(200).json(location);
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to fetch location",
-    });
-  }
+  res.json(location);
 };
 
+/** NPCs who have dialogue at this location, in any case. */
 export const getLocationNpcs = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const prisma = await getPrisma();
+  const dialogues = await prisma.dialogue.findMany({
+    where: { locationId: req.params.id },
+    include: { npc: true },
+  });
 
-    const client = await getPrisma();
-
-    const dialogues = await client.dialogue.findMany({
-      where: {
-        locationId: id,
-      },
-      include: {
-        npc: true,
-      },
-    });
-
-    const npcs = dialogues.map((dialogue) => dialogue.npc);
-
-    const uniqueNpcs = Array.from(
-      new Map(npcs.map((npc) => [npc.id, npc])).values()
-    );
-
-    res.status(200).json(uniqueNpcs);
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to fetch location NPCs",
-    });
-  }
+  const unique = new Map(dialogues.map(({ npc }) => [npc.id, npc]));
+  res.json([...unique.values()]);
 };

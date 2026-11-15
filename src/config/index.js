@@ -44,6 +44,9 @@ function resolveDatabaseMode(raw) {
 export const config = {
   port: Number(process.env.PORT ?? 3000),
 
+  // The game frontend's origin, allowed to call the API cross-origin.
+  corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
+
   /**
    * Which database the SQL IDE talks to. "prisma" is currently the only mode:
    * the application's real database via the main Prisma schema (default).

@@ -1,123 +1,43 @@
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
-import { config } from "../config/index.js";
+import { getPrisma } from "../db/prisma.js";
+import { HttpError } from "../utils/httpError.js";
 
-let prisma = null;
-
-async function getPrisma() {
-  if (prisma) return prisma;
-
-  const { PrismaClient } = await import("../../generated/prisma/client.ts");
-
-  const pool = new Pool({
-    connectionString: config.databaseUrl,
+/** Lists every case with its step count, for the title screen's case files. */
+export const getCases = async (_req, res) => {
+  const prisma = await getPrisma();
+  const cases = await prisma.case.findMany({
+    orderBy: { id: "asc" },
+    include: { _count: { select: { steps: true } } },
   });
 
-  const adapter = new PrismaPg(pool);
-
-  prisma = new PrismaClient({ adapter });
-
-  return prisma;
-}
-
-/**
- * Lists every case for the frontend case-select grid.
- *
- * Read-only passthrough used by the dashboard; it introduces no game rules.
- * `stepCount` is a plain count of the case's CaseProgress rows so the UI can
- * show progress without loading every step.
- */
-export const getCases = async (_req, res) => {
-  try {
-    const client = await getPrisma();
-
-    const cases = await client.case.findMany({
-      orderBy: {
-        id: "asc",
-      },
-      include: {
-        _count: {
-          select: {
-            steps: true,
-          },
-        },
-      },
-    });
-
-    res.status(200).json(
-      cases.map(({ _count, ...rest }) => ({
-        ...rest,
-        stepCount: _count.steps,
-      })),
-    );
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to fetch cases",
-    });
-  }
+  res.json(cases.map(({ _count, ...rest }) => ({ ...rest, stepCount: _count.steps })));
 };
 
 export const getCase = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const prisma = await getPrisma();
+  const gameCase = await prisma.case.findUnique({ where: { id: req.params.id } });
+  if (!gameCase) throw new HttpError(404, "Case not found");
 
-    const client = await getPrisma();
-
-    const gameCase = await client.case.findUnique({
-      where: {
-        id: id,
-      },
-    });
-
-    if (!gameCase) {
-      return res.status(404).json({
-        message: "Case not found",
-      });
-    }
-
-    res.status(200).json(gameCase);
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to fetch case",
-    });
-  }
+  res.json(gameCase);
 };
 
+/**
+ * The full case flow. Query answers (queryOutput, answerValues, maxRows) are
+ * left out: a player could otherwise read them from the network tab.
+ */
 export const getCaseSteps = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const client = await getPrisma();
-
-    const steps = await client.caseProgress.findMany({
-      where: {
-        caseId: id,
+  const prisma = await getPrisma();
+  const steps = await prisma.caseProgress.findMany({
+    where: { caseId: req.params.id },
+    orderBy: { sequenceId: "asc" },
+    include: {
+      dialogue: { include: { npc: true } },
+      evidence: true,
+      location: true,
+      query: {
+        select: { id: true, caseId: true, title: true, question: true, difficulty: true, hint: true },
       },
-      orderBy: {
-        sequenceId: "asc",
-      },
-      include: {
-        dialogue: {
-          include: {
-            npc: true,
-          },
-        },
-        evidence: true,
-        location: true,
-        query: true,
-      },
-    });
+    },
+  });
 
-    res.status(200).json(steps);
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to fetch case steps",
-    });
-  }
+  res.json(steps);
 };

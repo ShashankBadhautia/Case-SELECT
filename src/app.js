@@ -11,11 +11,7 @@ import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
 const app = express();
 
-app.use(
-  cors({
-    origin: "http://localhost:5173",
-  }),
-);
+app.use(cors({ origin: config.corsOrigin }));
 
 app.use(express.json({ limit: "1mb" }));
 

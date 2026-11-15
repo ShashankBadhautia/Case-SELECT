@@ -1,11 +1,10 @@
 /*
- * Case-SELECT — global stylesheet entry point.
- *
- * Import order matters: fonts first, then the design tokens (which define the
- * light/dark palettes), then the component styles built on top of those tokens.
+ * Global stylesheet. Fonts first, then design tokens, then the components
+ * that use them.
  */
-
 @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap");
 
 @import "./styles/tokens.css";
-@import "./styles/pixel.css";
+@import "./styles/base.css";
+@import "./styles/title.css";
+@import "./styles/game.css";
