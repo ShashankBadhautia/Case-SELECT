@@ -2,9 +2,9 @@ import { getPrisma } from "../db/prisma.js";
 import { HttpError } from "../utils/httpError.js";
 
 /**
- * Looks a player up by username. The app has no login yet, so the frontend
- * resolves its configured player this way; real authentication would replace
- * this (see SUGGESTED_IMPROVEMENTS.md).
+ * Looks a player up by username. Kept as a public, non-sensitive lookup for
+ * older clients; the game takes its identity from the session instead
+ * (see routes/auth.routes.js and middleware/requireAuth.js).
  */
 export const getUserByUsername = async (req, res) => {
   const prisma = await getPrisma();

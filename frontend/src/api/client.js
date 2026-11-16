@@ -19,6 +19,9 @@ async function request(path, { method = "GET", body } = {}) {
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
+      // The session lives in an HttpOnly cookie; this is what sends it on
+      // cross-origin requests (the dev server is :5173, the API is :3000).
+      credentials: "include",
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -40,6 +43,14 @@ const enc = encodeURIComponent;
 const sessionPath = (userId, caseId) => `/api/users/${enc(userId)}/cases/${enc(caseId)}/session`;
 
 export const api = {
+  auth: {
+    me: () => request("/api/auth/me"),
+    login: (identifier, password) =>
+      request("/api/auth/login", { method: "POST", body: { identifier, password } }),
+    register: (payload) => request("/api/auth/register", { method: "POST", body: payload }),
+    logout: () => request("/api/auth/logout", { method: "POST" }),
+  },
+
   cases: {
     list: () => request("/api/cases"),
     /** Runs SQL without grading it (a terminal with no open question). */

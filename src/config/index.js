@@ -1,6 +1,7 @@
 import "dotenv/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,11 +42,66 @@ function resolveDatabaseMode(raw) {
   return mode;
 }
 
+/** Splits CORS_ORIGIN (comma separated) into the list sent to the CORS middleware. */
+function resolveCorsOrigins(raw) {
+  const value = raw ?? "";
+  const origins = value
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (origins.includes("*")) {
+    // A wildcard cannot be combined with credentialed cookies; browsers reject
+    // `Access-Control-Allow-Origin: *` for requests that send a cookie.
+    throw new Error("CORS_ORIGIN=* is not allowed: the API uses credentialed session cookies.");
+  }
+  return origins.length > 0 ? origins : ["http://localhost:5173"];
+}
+
+function resolveSessionSecret(isProduction) {
+  const secret = process.env.SESSION_SECRET?.trim();
+  if (secret) return secret;
+  if (isProduction) {
+    // Refuse to boot a production server with an ephemeral secret: every
+    // restart would invalidate every session and the value would be guessable.
+    throw new Error("SESSION_SECRET must be set to a long random value in production.");
+  }
+  const generated = randomBytes(32).toString("hex");
+  console.warn(
+    "SESSION_SECRET is not set; using an ephemeral development secret. " +
+      "Set SESSION_SECRET to keep sessions across restarts.",
+  );
+  return generated;
+}
+
+function resolveCookieSameSite(raw) {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (value === "") return "lax";
+  if (!["lax", "strict", "none"].includes(value)) {
+    throw new Error(`Invalid COOKIE_SAME_SITE "${raw}". Valid values: lax, strict, none.`);
+  }
+  return value;
+}
+
+function resolveCookieSecure(raw, isProduction) {
+  if (raw === undefined || raw.trim() === "") return isProduction;
+  const value = raw.trim().toLowerCase();
+  if (value !== "true" && value !== "false") {
+    throw new Error(`Invalid COOKIE_SECURE "${raw}". Use true or false.`);
+  }
+  return value === "true";
+}
+
+const isProduction = process.env.NODE_ENV === "production";
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
 
-  // The game frontend's origin, allowed to call the API cross-origin.
-  corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
+  isProduction,
+
+  // Origins allowed to call the API cross-origin. CORS_ORIGIN may be a
+  // comma-separated list. Credentials are enabled, so the browser will only
+  // send the session cookie to these origins.
+  corsOrigins: resolveCorsOrigins(process.env.CORS_ORIGIN),
 
   /**
    * Which database the SQL IDE talks to. "prisma" is currently the only mode:
@@ -56,6 +112,22 @@ export const config = {
   // Connection string for the real database (prisma mode). Set DATABASE_URL to
   // your PostgreSQL connection string — see database.md.
   databaseUrl: process.env.DATABASE_URL ?? "",
+
+  // ── Sessions ──────────────────────────────────────────
+  // Sessions are stored in PostgreSQL (connect-pg-simple), never in memory.
+  sessionSecret: resolveSessionSecret(isProduction),
+  sessionTtlMs: Number(process.env.SESSION_TTL_HOURS ?? 168) * 60 * 60 * 1000,
+  sessionCookieName: "caseSelect.sid",
+  cookieSameSite: resolveCookieSameSite(process.env.COOKIE_SAME_SITE),
+  cookieSecure: resolveCookieSecure(process.env.COOKIE_SECURE, isProduction),
+
+  // Login/registration brute-force protection.
+  authRateLimit: {
+    enabled: process.env.DISABLE_AUTH_RATE_LIMIT !== "true",
+    windowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000),
+    loginMax: Number(process.env.AUTH_RATE_LIMIT_LOGIN_MAX ?? 20),
+    registerMax: Number(process.env.AUTH_RATE_LIMIT_REGISTER_MAX ?? 30),
+  },
 
   // Paths are resolved relative to the project root (one level up from src/).
   paths: {

@@ -23,7 +23,9 @@ model User {
   id       Int    @id @default(autoincrement())
   username String @unique
   email    String @unique
-  password String // store a hash (bcrypt/argon2), never plain text
+  // Argon2id hash, never plain text. NULL means the account has no usable
+  // credential (legacy/seeded rows) and cannot log in; no default is assigned.
+  password String?
 
   progress UserProgress[] // "has made"
 

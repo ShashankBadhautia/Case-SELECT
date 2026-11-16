@@ -1,0 +1,119 @@
+/* Sign-in / registration screens. */
+
+.auth-screen {
+  position: relative;
+  background:
+    repeating-linear-gradient(0deg, rgb(0 0 0 / 18%) 0 2px, transparent 2px 4px),
+    radial-gradient(ellipse at 50% 0%, #2a1610 0%, var(--bg) 65%);
+}
+
+.auth {
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth h1 {
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.auth__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.auth__field input {
+  font-family: var(--font-body);
+  font-size: 22px;
+  color: var(--text);
+  background: var(--bg);
+  border: 0;
+  padding: 10px 12px;
+  box-shadow: 0 0 0 var(--px) var(--panel-edge);
+}
+
+.auth__field input:focus {
+  outline: var(--px) solid var(--accent);
+  outline-offset: 2px;
+}
+
+.auth__hint {
+  font-family: var(--font-body);
+  font-size: 18px;
+  color: var(--bad);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.auth__error {
+  margin: 0;
+  font-size: 20px;
+}
+
+.auth .btn--primary {
+  align-self: flex-start;
+}
+
+.auth__alt {
+  font-size: 20px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.auth__alt a {
+  color: var(--accent);
+}
+
+.auth__back {
+  align-self: center;
+  margin-top: 4px;
+}
+
+/* Signed-in chip on the title screen. */
+
+.title-screen__account {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 20px;
+  color: var(--text-muted);
+}
+
+.title-screen__account strong {
+  color: var(--text);
+  font-weight: normal;
+}
+
+.auth-panel {
+  width: min(520px, 100%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.auth-panel h2 {
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.auth-panel__actions {
+  display: flex;
+  gap: 12px;
+}
