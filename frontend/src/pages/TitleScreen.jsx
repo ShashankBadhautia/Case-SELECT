@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { api } from "../api/client.js";
-import { usePlayer } from "../hooks/usePlayer.js";
+import { useAuth } from "../auth/useAuth.js";
 import { useTypewriter } from "../hooks/useTypewriter.js";
 import { CharacterPortrait } from "../ui/CharacterPortrait.jsx";
 
@@ -16,20 +16,22 @@ const STATUS_LABEL = {
 
 /**
  * Opening screen: the logo, the detective's introduction and the case files.
- * A case without steps is shown as "coming soon" and cannot be opened.
+ * Signed-out visitors see the intro and a sign-in prompt; a signed-in player
+ * sees their case files with per-case progress. A case without steps is shown
+ * as "coming soon" and cannot be opened.
  */
 export function TitleScreen() {
   const navigate = useNavigate();
-  const { player, error: playerError } = usePlayer();
+  const { user, loading: authLoading, logout } = useAuth();
   const [cases, setCases] = useState(null);
   const [error, setError] = useState(null);
   const [intro, introDone, skipIntro] = useTypewriter(INTRO);
 
   useEffect(() => {
-    if (!player) return undefined;
+    if (!user) return undefined;
     let cancelled = false;
 
-    Promise.all([api.cases.list(), api.players.progress(player.id)])
+    Promise.all([api.cases.list(), api.players.progress(user.id)])
       .then(([caseList, progressRows]) => {
         if (cancelled) return;
         const statusByCase = Object.fromEntries(progressRows.map((row) => [row.caseId, row.status]));
@@ -40,9 +42,15 @@ export function TitleScreen() {
     return () => {
       cancelled = true;
     };
-  }, [player]);
+  }, [user]);
 
-  const failure = playerError ?? error;
+  if (authLoading) {
+    return (
+      <main className="screen screen--center">
+        <p className="loading">Checking your badge…</p>
+      </main>
+    );
+  }
 
   return (
     <main className="screen title-screen" onClick={skipIntro}>
@@ -55,6 +63,17 @@ export function TitleScreen() {
         </h1>
       </header>
 
+      {user && (
+        <div className="title-screen__account">
+          <span>
+            Signed in as <strong>{user.username}</strong>
+          </span>
+          <button type="button" className="btn btn--small" onClick={logout}>
+            Log out
+          </button>
+        </div>
+      )}
+
       <section className="intro panel">
         <CharacterPortrait look="detective" scale={6} />
         <p className="intro__text">
@@ -63,38 +82,55 @@ export function TitleScreen() {
         </p>
       </section>
 
-      <section className="casefiles" aria-label="Case files">
-        {failure && (
-          <p className="panel message message--error">
-            {failure.message}
-          </p>
-        )}
-        {!failure && !cases && <p className="loading">Pulling case files…</p>}
-        {cases?.map((c) => {
-          const playable = c.stepCount > 0;
-          return (
-            <article key={c.id} className={`casecard panel ${playable ? "" : "is-disabled"}`}>
-              <header className="casecard__header">
-                <span className="casecard__id">{c.id}</span>
-                {c.difficulty && (
-                  <span className={`badge badge--${c.difficulty.toLowerCase()}`}>{c.difficulty}</span>
-                )}
-                {playable && <span className={`status status--${c.status.toLowerCase()}`}>{STATUS_LABEL[c.status]}</span>}
-              </header>
-              <h2 className="casecard__title">{c.caseName}</h2>
-              <p className="casecard__description">{c.description ?? "Details sealed until the case opens."}</p>
-              <button
-                type="button"
-                className="btn btn--primary"
-                disabled={!playable}
-                onClick={() => navigate(`/case/${encodeURIComponent(c.id)}`)}
-              >
-                {!playable ? "Coming soon" : c.status === "NOT_STARTED" ? "Take the case" : c.status === "COMPLETED" ? "Review case" : "Continue"}
-              </button>
-            </article>
-          );
-        })}
-      </section>
+      {!user && (
+        <section className="panel auth-panel">
+          <h2>Your case files are waiting</h2>
+          <p className="muted">Sign in to pick up your investigation where you left it.</p>
+          <div className="auth-panel__actions">
+            <Link className="btn btn--primary" to="/login">
+              Log in
+            </Link>
+            <Link className="btn" to="/register">
+              Create account
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {user && (
+        <section className="casefiles" aria-label="Case files">
+          {error && (
+            <p className="panel message message--error">
+              {error.message}
+            </p>
+          )}
+          {!error && !cases && <p className="loading">Pulling case files…</p>}
+          {cases?.map((c) => {
+            const playable = c.stepCount > 0;
+            return (
+              <article key={c.id} className={`casecard panel ${playable ? "" : "is-disabled"}`}>
+                <header className="casecard__header">
+                  <span className="casecard__id">{c.id}</span>
+                  {c.difficulty && (
+                    <span className={`badge badge--${c.difficulty.toLowerCase()}`}>{c.difficulty}</span>
+                  )}
+                  {playable && <span className={`status status--${c.status.toLowerCase()}`}>{STATUS_LABEL[c.status]}</span>}
+                </header>
+                <h2 className="casecard__title">{c.caseName}</h2>
+                <p className="casecard__description">{c.description ?? "Details sealed until the case opens."}</p>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  disabled={!playable}
+                  onClick={() => navigate(`/case/${encodeURIComponent(c.id)}`)}
+                >
+                  {!playable ? "Coming soon" : c.status === "NOT_STARTED" ? "Take the case" : c.status === "COMPLETED" ? "Review case" : "Continue"}
+                </button>
+              </article>
+            );
+          })}
+        </section>
+      )}
 
       <footer className="title-screen__footer">
         WASD / Arrows to walk · E to interact · C for the case file · Esc for the menu

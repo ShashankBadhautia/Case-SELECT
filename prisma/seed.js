@@ -18,11 +18,16 @@ import * as caseC001 from "./data/caseC001.js";
 
 const CASES = [caseC001];
 
-/** The player the frontend uses until real authentication exists. */
+/**
+ * Legacy demo player. Kept so existing references and progress survive the
+ * move to authentication. It has no credential (password NULL): no default
+ * password is assigned, so it cannot be signed into until an account with a
+ * real hash is registered.
+ */
 const DEMO_PLAYER = {
   username: "detective",
   email: "detective@caseselect.local",
-  password: "not-a-real-hash",
+  password: null,
 };
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });

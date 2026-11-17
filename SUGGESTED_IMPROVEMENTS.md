@@ -17,13 +17,13 @@ same rule in the database itself. This matters most on a superuser
 connection, where functions like `pg_read_file` exist; the code blocks `pg_*`
 names but a role would make that unnecessary.
 
-## 2. Authentication
+## 2. Authentication — done
 
-There is no login. Every browser plays as `VITE_PLAYER_USERNAME`, resolved
-through `GET /api/users/by-username/:username`, and the session routes trust
-the user id in the URL. Add sessions or tokens, take the user from the
-request, and drop the username lookup. The design doc's flow (intro for
-logged-out players, case files once logged in) fits the title screen as is.
+Register/login/logout with an Argon2id hash and a PostgreSQL-backed session
+store; the player now comes from the session instead of
+`VITE_PLAYER_USERNAME`, and player routes reject another user's id. See
+"Authentication" in README.md. Remaining hardening: a password-reset flow and
+per-account rate limiting once there is more than one instance.
 
 ## 3. Case availability
 

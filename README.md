@@ -6,7 +6,7 @@ witnesses, and crack the case by writing SQL against the case records.
 The design doc's game loop: enter a location, explore it, talk to people, find
 clues, then answer the open question with a query. A right answer adds
 evidence and unlocks the next place to go.
-
+ 
 | Piece | Stack | Port |
 | --- | --- | --- |
 | Backend API and developer SQL IDE | Express 5, Prisma 7, PostgreSQL | `3000` |
@@ -31,7 +31,9 @@ cp .env.example .env
 npm run dev                     # game on :5173
 ```
 
-Open <http://localhost:5173>, pick the case file and play.
+Open <http://localhost:5173> and register an account; your case progress is
+saved to it. (Set `SESSION_SECRET` in `.env` if you want sessions to survive a
+backend restart.)
 
 Controls: WASD or arrow keys to walk, E or Space to talk, inspect or use a
 terminal, C for the case file, Esc for the menu. In a terminal, Ctrl/⌘ + Enter
@@ -57,6 +59,35 @@ Case C001, "The Murderer Is Not a Suspect", is the doc's "Case Select 000":
 [`prisma/data/caseC001.js`](prisma/data/caseC001.js), including notes on what
 was added to the doc so it plays end to end.
 
+## Authentication
+
+Players register and sign in. The server keeps the session in PostgreSQL
+(`connect-pg-simple`) and sends it as an HttpOnly cookie; there is no
+`VITE_PLAYER_USERNAME` any more. The player is whoever the session says they
+are, and every player route checks that the `:userId` in the URL belongs to
+that session — changing the id in a request returns 403.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/auth/register` | Create an account and start a session |
+| `POST` | `/api/auth/login` | Sign in with username or email |
+| `POST` | `/api/auth/logout` | Destroy the session and clear the cookie |
+| `GET` | `/api/auth/me` | The signed-in player (id, username, email) |
+
+- Passwords are Argon2id hashes. `users.password` is `NULL` for legacy rows
+  (the seeded `detective`), so no default credential is ever assigned and
+  those accounts cannot sign in.
+- Every failed sign-in returns the same generic `401`, so accounts cannot be
+  probed. Registration reports a duplicate username or email as `409`.
+- Login and registration are rate limited per IP.
+- The cookie is `caseSelect.sid`: HttpOnly, `SameSite=Lax`, `Secure` in
+  production, `SESSION_TTL_HOURS` long (7 days by default). SameSite=Lax plus
+  the JSON-only API and an Origin allow-list is the CSRF defence; set
+  `COOKIE_SAMESITE`/`COOKIE_SECURE` if the game and API live on different
+  sites.
+- The developer SQL IDE (`/api/ide/*`) is **not** behind player auth. It keeps
+  its own Connect/Disconnect and full database access.
+
 ## Player SQL safety
 
 Queries typed in the game go through
@@ -74,9 +105,9 @@ table is therefore out of reach from the game.
 | `GET` | `/api/cases/:id` | One case |
 | `GET` | `/api/cases/:id/steps` | Full step list (answers left out) |
 | `POST` | `/api/cases/:id/sql` | Run SQL against the case records, ungraded |
-| `GET` | `/api/users/by-username/:username` | Look up a player |
-| `GET` | `/api/users/:id/progress` | A player's status in each case |
-| `GET` | `/api/users/:userId/cases/:caseId/session` | Case, locations, NPCs, tables and the player's progress |
+| `GET` | `/api/users/by-username/:username` | Look up a player (public, non-sensitive) |
+| `GET` | `/api/users/:id/progress` | A player's status in each case — **requires the session's own id** |
+| `GET` | `/api/users/:userId/cases/:caseId/session` | Case, locations, NPCs, tables and the player's progress — **requires the session's own id** |
 | `POST` | `/api/users/:userId/cases/:caseId/session/dialogue` | `{ sequenceId }`: finish the current dialogue step |
 | `POST` | `/api/users/:userId/cases/:caseId/session/answer` | `{ sequenceId, sql }`: answer the current query step |
 | `PUT` | `/api/users/:userId/cases/:caseId/session/location` | `{ locationId }`: move to an unlocked location |
@@ -86,7 +117,8 @@ table is therefore out of reach from the game.
 
 Session actions name the step they complete. If it is not the player's current
 step the server answers `409` with the real progress, so a double click never
-skips a step.
+skips a step. Requests for another player's id are rejected with `401` (no
+session) or `403` (someone else's).
 
 ## Project structure
 
@@ -98,17 +130,26 @@ prisma/
 src/                        backend (Express, MVC)
   db/prisma.js              shared Prisma client and pg pool
   services/
+    auth.service.js         registration, Argon2id credentials, lookups
     caseProgression.js      pure game rules (unit tested)
     caseSession.service.js  loads a playthrough, applies player actions
     grading.js              decides if a result answers a question
     playerSql.service.js    guarded runner for player SQL
-  controllers/ routes/ middleware/ utils/ views/ (SQL IDE)
+  middleware/
+    session.js              PostgreSQL session store (connect-pg-simple)
+    requireAuth.js          401 unless the session names a user
+    ensureOwnership.js      403 unless the URL's user id is the session's
+    originGuard.js          rejects disallowed Origin headers
+    authRateLimit.js        login/registration rate limits
+  controllers/ routes/ utils/ views/ (SQL IDE)
+  controllers/auth.controller.js, routes/auth.routes.js
 frontend/src/
-  pages/                    TitleScreen, GamePage
+  auth/                     AuthProvider + useAuth (HttpOnly session cookie)
+  pages/                    TitleScreen, LoginPage, RegisterPage, GamePage
   game/                     Phaser: scenes, world layouts, tiles, characters
   ui/                       React overlays: dialogue, terminal, case file, HUD
   hooks/ api/ styles/
-test/                       backend unit tests (node --test)
+test/                       backend unit + HTTP integration tests (node --test)
 ```
 
 See [`frontend/README.md`](frontend/README.md) for how the game is put
@@ -122,16 +163,25 @@ Backend (`.env`):
 | --- | --- | --- |
 | `DATABASE_URL` | none | PostgreSQL connection string |
 | `PORT` | `3000` | Backend port |
-| `CORS_ORIGIN` | `http://localhost:5173` | Origin allowed to call the API |
+| `CORS_ORIGIN` | `http://localhost:5173` | Origin(s) allowed to call the API (comma-separated) |
 | `DB_MODE` | `prisma` | SQL IDE database mode (PostgreSQL only) |
+| `SESSION_SECRET` | dev-generated | Session signing secret; **required in production** |
+| `SESSION_TTL_HOURS` | `168` | Session lifetime (7 days) |
+| `COOKIE_SAME_SITE` | `lax` | `lax`, `strict` or `none` |
+| `COOKIE_SECURE` | `true` in production | Send the cookie only over HTTPS |
+| `DISABLE_AUTH_RATE_LIMIT` | `false` | Set `true` to turn off login/registration limits |
+| `AUTH_RATE_LIMIT_LOGIN_MAX` | `20` | Login attempts allowed per window, per IP |
+| `AUTH_RATE_LIMIT_REGISTER_MAX` | `30` | Registration attempts allowed per window, per IP |
 
 Frontend (`frontend/.env`):
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | `http://localhost:3000` | Backend origin |
-| `VITE_PLAYER_USERNAME` | `detective` | Player whose progress is saved (there is no login yet) |
 | `VITE_PORT` | `5173` | Dev server port |
+
+The player is whoever the session cookie belongs to; there is no player name
+to configure.
 
 ## Scripts
 

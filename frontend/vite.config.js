@@ -10,6 +10,15 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
+      allowedHosts: [
+    'unique-sponsorship-concerns-hispanic.trycloudflare.com'
+  ],
+      proxy: {
+    '/api': {
+      target: 'http://localhost:3000',
+      changeOrigin: true
+    }
+  },
       port,
       // Fail loudly instead of silently moving to :5174, where the backend's
       // CORS allow-list (src/app.js) would reject every API call.

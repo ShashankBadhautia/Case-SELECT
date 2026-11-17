@@ -7,7 +7,7 @@ import { PhaserGame } from "../game/PhaserGame.jsx";
 import { getLayout } from "../game/world/layouts/index.js";
 import { useCaseSession } from "../hooks/useCaseSession.js";
 import { useKeyDown } from "../hooks/useKeyDown.js";
-import { usePlayer } from "../hooks/usePlayer.js";
+import { useAuth } from "../auth/useAuth.js";
 import { useToasts } from "../hooks/useToasts.js";
 import { CaseClosed } from "../ui/CaseClosed.jsx";
 import { CaseFile } from "../ui/CaseFile.jsx";
@@ -32,8 +32,8 @@ import { Toasts } from "../ui/Toasts.jsx";
 export function GamePage() {
   const { caseId } = useParams();
   const navigate = useNavigate();
-  const { player, error: playerError } = usePlayer();
-  const { session, progress, error, loading, actions } = useCaseSession(caseId, player?.id);
+  const { user, loading: authLoading } = useAuth();
+  const { session, progress, error, loading, actions } = useCaseSession(caseId, user?.id);
 
   const [movedTo, setMovedTo] = useState(null); // location chosen this visit
   const [cameFrom, setCameFrom] = useState(null);
@@ -201,7 +201,15 @@ export function GamePage() {
 
   // ───────────── Render ─────────────
 
-  const failure = playerError ?? error;
+  const failure = error;
+  if (authLoading) {
+    return (
+      <main className="screen screen--center">
+        <p className="loading">Checking your badge…</p>
+      </main>
+    );
+  }
+
   if (failure) {
     return (
       <main className="screen screen--center">
